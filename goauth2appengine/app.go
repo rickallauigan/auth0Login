@@ -17,30 +17,32 @@ var (
 	token = ""
 )
 
+var domain = "bukidutility.auth0.com"
+
 // OAuth2 configuration.
 var oauthCfg = &oauth.Config{
-	// TODO: put your project's Client Id from https://code.google.com/apis/console here.
-	ClientId: "TODO",
+	// ClientId:     "39841708487-lpttv3dlfg5u7ci5fm2du2me6l4hkj3v.apps.googleusercontent.com",
+	// ClientSecret: "YNy5amFmFfUj9NcYGU5XRenx",
+	// AuthURL:      "https://accounts.google.com/o/oauth2/auth",
+	// RedirectURL:  "http://localhost:8080/oauth2callback",
+	// TokenURL:     "https://accounts.google.com/o/oauth2/token",
+	//Scope:        "https://www.googleapis.com/auth/userinfo.profile",
 
-	// TODO: put your project's Client Secret from https://code.google.com/apis/console here.
-	ClientSecret: "TODO",
-
-	// Google's OAuth2 authentication URL.
-	AuthURL: "https://accounts.google.com/o/oauth2/auth",
-
-	// To return your OAuth2 code, Google will redirect the browser to this page that you have defined.
-	// TODO: This exact URL should also be added in your Google API console for this project within "API Access"->"Redirect URIs"
-	RedirectURL: "http://[your domain or localhost]/oauth2callback",
-
-	// Google's OAuth2 token URL.
-	TokenURL: "https://accounts.google.com/o/oauth2/token",
-
-	// This is the 'scope' of the data that you are asking the user's permission to access. For getting user's info, this is the URL that Google has defined.
-	Scope: "https://www.googleapis.com/auth/userinfo.profile",
+	ClientId:     "mhqhf8fTNZKtDDZRdukygwWTbybVVHbC",
+	ClientSecret: "ZJzvq_3kGkmRjG3KOAQGweiLsvKytuRjKrB_l2cMcCUlo10oKpMNGzGQn8ns7B4E",
+	AuthURL:      "https://bukidutility.auth0.com/authorize",
+	RedirectURL:  "http://localhost:8080/oauth2callback",
+	TokenURL:     "https://bukidutility.auth0.com/oauth/token",
+	Scope:        "openid",
+	//Endpoint: oauth2.Endpoint{
+	//	AuthURL:  "https://" + domain + "/authorize",
+	//	TokenURL: "https://" + domain + "/oauth/token",
+	//},
 }
 
 // This is the URL that Google has defined so that an authenticated application may obtain the user's info in json format.
-const profileInfoURL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
+//const profileInfoURL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
+const profileInfoURL = "https://bukidutility.auth0.com/userinfo"
 
 // This is where Google App Engine sets up which handler lives at the root url.
 func init() {
@@ -88,7 +90,8 @@ func handleOAuth2Callback(rw http.ResponseWriter, req *http.Request) {
 	// Retrieve the code from the response.
 	code := req.FormValue("code")
 
-	// Configure OAuth's http.Client to use the appengine/urlfetch transport that all Google App Engine applications have to use for outbound requests.
+	// Configure OAuth's http.Client to use the appengine/urlfetch transport
+	// that all Google App Engine applications have to use for outbound requests.
 	t := &oauth.Transport{Config: oauthCfg, Transport: &urlfetch.Transport{Context: c}}
 
 	// Exchange the received code for a token.
@@ -106,6 +109,7 @@ func handleOAuth2Callback(rw http.ResponseWriter, req *http.Request) {
 	c.Infof("Token: %s", token)
 
 	// Render the user's information.
+
 	err = cached_templates.ExecuteTemplate(rw, "userInfo.html", string(buf))
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusNotFound)
