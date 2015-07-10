@@ -1,0 +1,212 @@
+package main
+
+import (
+	_ "crypto/sha512"
+	"encoding/json"
+	"github.com/joho/godotenv"
+	//"github.com/auth0/auth0-golang/examples/regular-web-app/app"
+	//"fmt"
+	"github.com/astaxie/beego/session"
+	"github.com/gorilla/mux"
+	"golang.org/x/oauth2"
+	"html/template"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+)
+
+var (
+	GlobalSessions *session.Manager
+)
+
+func init() {
+
+	GlobalSessions, _ = session.NewManager("memory", `{"cookieName":"gosessionid","gclifetime":3600}`)
+	go GlobalSessions.GC()
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	router := mux.NewRouter().StrictSlash(true)
+
+	router.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	//router.Handle("/static/public/", http.StripPrefix("/static/public/", http.FileServer(http.Dir("static/public"))))
+	router.PathPrefix("/public/").Handler(http.StripPrefix("/public/", http.FileServer(http.Dir("public/"))))
+
+	router.HandleFunc("/main", mainHandler)
+	router.HandleFunc("/callback", CallbackHandler)
+	router.HandleFunc("/user", UserHandler)
+	//router.HandleFunc("/", rootHandler)
+	router.HandleFunc("/", HomeHandler)
+
+	http.Handle("/", router)
+}
+
+func CallbackHandler(w http.ResponseWriter, r *http.Request) {
+
+	//domain := os.Getenv("AUTH0_DOMAIN")
+	domain := "bukidutility.auth0.com"
+
+	conf := oauth2.Config{
+		ClientID:     os.Getenv("AUTH0_CLIENT_ID"),
+		ClientSecret: os.Getenv("AUTH0_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("AUTH0_CALLBACK_URL"),
+		Scopes:       []string{"openid", "profile"},
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://" + domain + "/authorize",
+			TokenURL: "https://" + domain + "/oauth/token",
+		},
+	}
+
+	code := r.URL.Query().Get("code")
+
+	token, err := conf.Exchange(oauth2.NoContext, code)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	client := conf.Client(oauth2.NoContext, token) //Getting now the userInfo
+
+	resp, err := client.Get("https://" + domain + "/userinfo")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	raw, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var profile map[string]interface{}
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	session, _ := GlobalSessions.SessionStart(w, r)
+	defer session.SessionRelease(w)
+
+	session.Set("id_token", token.Extra("id_token"))
+	session.Set("access_token", token.AccessToken)
+	session.Set("profile", profile)
+
+	http.Redirect(w, r, "/user", http.StatusMovedPermanently) // Redirect to logged in page
+}
+
+func IsAuthenticated(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+
+	session, _ := GlobalSessions.SessionStart(w, r)
+	defer session.SessionRelease(w)
+	if session.Get("profile") == nil {
+		http.Redirect(w, r, "/", http.StatusMovedPermanently)
+	} else {
+		next(w, r)
+	}
+}
+
+func UserHandler(w http.ResponseWriter, r *http.Request) {
+
+	session, _ := GlobalSessions.SessionStart(w, r)
+	defer session.SessionRelease(w)
+
+	RenderTemplate(w, "user", session.Get("profile"))
+
+	//fmt.Fprintf(w, "user!")
+}
+
+func HomeHandler(w http.ResponseWriter, r *http.Request) {
+
+	data := struct {
+		Auth0ClientId     string
+		Auth0ClientSecret string
+		Auth0Domain       string
+		Auth0CallbackURL  template.URL
+	}{
+		os.Getenv("AUTH0_CLIENT_ID"),
+		os.Getenv("AUTH0_CLIENT_SECRET"),
+		os.Getenv("AUTH0_DOMAIN"),
+		template.URL(os.Getenv("AUTH0_CALLBACK_URL")),
+	}
+
+	RenderTemplate(w, "home", data)
+}
+
+func RenderTemplate(w http.ResponseWriter, tmpl string, data interface{}) {
+	cwd, _ := os.Getwd()
+	t, err := template.ParseFiles(filepath.Join(cwd, "/static/"+tmpl+".html"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+
+	if r.URL.Path != "/main" {
+		errorHandler(w, r, http.StatusNotFound, "")
+		return
+	}
+	page := template.Must(template.ParseFiles(
+		"static/_base.html",
+		"static/main.html",
+	))
+
+	if err := page.Execute(w, nil); err != nil {
+		errorHandler(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+}
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		errorHandler(w, r, http.StatusNotFound, "")
+		return
+	}
+
+	page := template.Must(template.ParseFiles(
+		"static/_base.html",
+		"static/index.html",
+	))
+	if err := page.Execute(w, nil); err != nil {
+		errorHandler(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+}
+
+func errorHandler(w http.ResponseWriter, r *http.Request, status int, err string) {
+	w.WriteHeader(status)
+	switch status {
+
+	case http.StatusNotFound:
+		page := template.Must(template.ParseFiles(
+			"static/_base.html",
+			"static/404.html",
+		))
+		if err := page.Execute(w, nil); err != nil {
+			errorHandler(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+	case http.StatusInternalServerError:
+		page := template.Must(template.ParseFiles(
+			"static/_base.html",
+			"static/500.html",
+		))
+		if err := page.Execute(w, nil); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+}

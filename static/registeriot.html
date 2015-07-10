@@ -1,0 +1,24 @@
+{{ define "content" }}
+
+    <div class="container">
+      <h2>ORBIT LABS</h2>
+      <table>
+      	<tr>
+          <td><pre><b>Use the Token on your Device:</b></pre></td>
+        </tr>
+		<tr>
+			<td><pre><b>DateRegistered</b></pre></td>
+			<td><pre><b>Token</b></pre></td>
+			<td><pre><b>UID</b></pre></td>
+		</tr>
+          {{range .}}
+            <tr>
+              <td><pre>{{.DateRegistered}}</pre></td>
+              <td><pre>{{.Token}}</pre></td>
+              <td><pre>{{.UID}}</pre></td>
+            </tr>
+          {{end}}
+      </table>
+    </div>
+  
+{{ end }}
